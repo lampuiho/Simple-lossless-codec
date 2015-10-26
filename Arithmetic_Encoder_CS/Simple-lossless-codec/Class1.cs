@@ -38,29 +38,79 @@ namespace Simple_lossless_codec
             this.o_data_length = o_data_length; this.data = output;
         }
     }
+	
+	public class Buffer<T>
+    {
+        const int buf_size = 1048576;
+        int pos = -1;
+        List<T> data = new List<T>(buf_size);
+
+        public T Read()
+        {
+            var result = data[++pos];
+                if (pos == buf_size - 1)
+                {
+                    data.Clear();
+                    pos = -1;
+                }
+            return result;
+        }
+        public void Write(T input)
+        {
+            data.Add(input);
+        }
+        public bool Empty()
+        {
+            return pos == data.Count - 1;
+        }
+        public bool Full()
+        {
+            return data.Count == buf_size;
+        }
+
+	}
+	
+	public interface IDataPacketHandler<T>
+	{
+		void Input(T data); //for conversion to C sake, not turned into actual EventHandler
+		void Finalise();
+		void Initialise(IDataPacketSender<T> sender);		
+	}
+    public interface IDataPacketSender<T>
+    {
+        void RegisterPacketHandler(IDataPacketHandler<T> handler);
+    }
+	
+	public abstract class ProbabilityAdaptor
+	{
+		uint[] symbol_count; //integrated
+	}
 
     public class BinaryCoder
     {
         const uint precision = sizeof(int)*8; const uint half = (uint.MaxValue >> 1) + 1;
         const uint quarter = (uint.MaxValue >> 2) + 1; const uint quarter_3 = (uint)0x3 << (sizeof(int)*8 - 2);
 
-        internal class Coder_Worker : IDisposable
+        internal class Binary_Coder_Worker : IDisposable
         {
-            protected List<int> output;
+            internal const int byte_size = 8;
+
+            protected List<byte> output;
             protected uint[] bit_count = new uint[2] { 3, 4 }; //keep size of bit_count half of sizeof(uint)*8 or overflow can occur
-            protected uint current_int = 0, position_count = 0, underflow = 0, low = 0, high = uint.MaxValue;
+            protected byte current_byte = 0;
+            protected uint position_count = 0, underflow = 0, low = 0, high = uint.MaxValue;
 
             protected void emit_output()
             {
                 //check overflow
-                if (++position_count == sizeof(int)*8)
+                if (++position_count == byte_size)
                 {
-                    output.Add(unchecked((int)current_int));
-                    current_int = 0;
+                    output.Add(current_byte);
+                    current_byte = 0;
                     position_count = 0;
                 }
                 else
-                    current_int >>= 1;
+                    current_byte >>= 1;
             }
             protected void emit_zeros()
             {
@@ -75,7 +125,7 @@ namespace Simple_lossless_codec
             {
                 while (underflow > 0)
                 {
-                    current_int |= half;
+                    current_byte |= 0x80;
                     emit_output();
                     underflow--;
                 }
@@ -84,30 +134,42 @@ namespace Simple_lossless_codec
             {
                 low <<= 1; high = (high << 1) + 1;
             }
+
+            protected virtual uint obtain_mid()
+            {
+                uint dif = high - low;
+                uint temp = ((dif % bit_count[1] + 1) * bit_count[0]) / bit_count[1];
+                //divide first to avoid overflow
+                return low + dif / bit_count[1] * bit_count[0] + temp;
+                //feedback error for multiplication
+            }
             public virtual void Dispose()
             {
                 output = null; bit_count = null;
             }
         }
 
-        internal class Binary_Encoder_Worker : Coder_Worker
+        internal class Binary_Encoder_Worker : Binary_Coder_Worker
         {
-            Data target;
-            Action[] obtain_range;
-            
-            internal Binary_Encoder_Worker(Data input)
-            {
-                this.target = input;
+            Action[] obtain_range; int processed = 0;
+			
+			internal Binary_Encoder_Worker() : base()
+			{
                 obtain_range = new Action[2] { low_range, high_range };
-            }
+			}
 
-            internal EncodedData run()
+            protected void process_bit(byte input)
             {
-                output = new List<int>(target.entropy);
+                obtain_range[input]();
+                check_range();
+                processed++;
+            }
+            internal EncodedData run(Data target)
+            {
+                output = new List<byte>(target.entropy);
                 foreach (bool bit in target.data)
                 {
-                    obtain_range[Convert.ToByte(bit)]();
-                    check_range();
+                    process_bit(Convert.ToByte(bit));
                 }
 
                 return finalise();
@@ -125,7 +187,7 @@ namespace Simple_lossless_codec
                 }
                 else if (low >= half)
                 {
-                    current_int |= half; //endianess
+                    current_byte |= 0x80; //endianess
                     emit_output();
                     emit_zeros();
                     shift_range();//2(x-half) = 2x - (maxValue + 1) <- automatic overflow
@@ -146,13 +208,13 @@ namespace Simple_lossless_codec
                     check_underflow();
                 }
             }
-            EncodedData finalise()
+            internal virtual EncodedData finalise()
             {
                 underflow++;
                 //flush last bits to get within range
                 if (low >= quarter)
                 {
-                    current_int |= half;
+                    current_byte |= 0x80;
                     emit_output();
                     emit_zeros();
                 }
@@ -164,54 +226,46 @@ namespace Simple_lossless_codec
 
                 if (position_count != 0) //filler
                 {
-                    current_int >>= (int)(sizeof(int)*8 - position_count - 1);
-                    output.Add(unchecked((int)current_int));
+                    current_byte >>= (byte)(byte_size - position_count - 1);
+                    output.Add(current_byte);
                 }
 
-                BitArray output_bits = new BitArray((int[])(object)output.ToArray());
-                EncodedData result = new EncodedData(target.data.Length, output_bits);
+                BitArray output_bits = new BitArray(output.ToArray());
+                EncodedData result = new EncodedData(processed, output_bits);
                 return result;
             }
             void low_range()
             {
-                long dif = (long)high - (long)low + 1;
-                //divide first to avoid overflow
-                high = (uint)(low + dif / bit_count[1] * bit_count[0] + (dif % bit_count[1]) * bit_count[0] - 1);
-                //feedback error for multiplication
+                high = obtain_mid() - 1;
                 //bit_count[0]++; bit_count[1]++;//update probability for next step for each byte
-                                               //to be replaced by other adaptative algorithms (such aspartial matching)
+                //to be replaced by other adaptative algorithms (such aspartial matching)
             }
             void high_range()
             {
-                long dif = (long)high - (long)low + 1;
-                low = (uint)(low + dif / bit_count[1] * bit_count[0] + (dif % bit_count[1]) * bit_count[0]);
+                low = obtain_mid();
                 //bit_count[1]++;
             }
             public override void Dispose(){
                 base.Dispose();
-                target = null; obtain_range = null;
+                obtain_range = null;
             }
         }
 
-        internal class Binary_Decoder_Worker : Coder_Worker
+        internal class Binary_Decoder_Worker : Binary_Coder_Worker
         {
             EncodedData target;
-            uint code;
+            uint code = 0;
             int i = 0;
 
-            internal Binary_Decoder_Worker(EncodedData input)
+            internal BitArray run(EncodedData target)
             {
-                target = input;
-            }
-
-            internal BitArray run()
-            {
-                output = new List<int>(target.o_data_length);
-                while (i < precision)
+                this.target = target;
+                output = new List<byte>(target.o_data_length / 8);
+                while (i < precision && i < target.data.Length)
                 {
                     next_input();
                 }
-                while (output.Count*sizeof(int)*8 < target.o_data_length)
+                while (output.Count * byte_size < target.o_data_length)
                 {
                     Find_Symbol();
                     check_range();
@@ -222,8 +276,7 @@ namespace Simple_lossless_codec
             void Find_Symbol()
             {
                 //obtain next symbol
-                long dif = (long)high - (long)low + 1;
-                uint temp_bound = (uint)(low + dif / bit_count[1] * bit_count[0] + (dif % bit_count[1]) * bit_count[0]);
+                uint temp_bound = obtain_mid();
                 if (code < temp_bound)
                 {
                     emit_output();
@@ -233,7 +286,7 @@ namespace Simple_lossless_codec
                 }
                 else
                 {
-                    current_int |= half;
+                    current_byte |= 0x80;
                     emit_output();
                     low = temp_bound;
 
@@ -282,18 +335,107 @@ namespace Simple_lossless_codec
         
         public EncodedData encode(Data input)
         {
-            using (Binary_Encoder_Worker worker = new Binary_Encoder_Worker(input))
+            using (Binary_Encoder_Worker worker = new Binary_Encoder_Worker())
             {
-                return worker.run();
+                return worker.run(input);
             }
         }
 
         public BitArray decode(EncodedData input)
         {
-            using (Binary_Decoder_Worker worker = new Binary_Decoder_Worker(input))
+            using (Binary_Decoder_Worker worker = new Binary_Decoder_Worker())
             {
-                return worker.run();
+                return worker.run(input);
             }
         }
+    }
+	
+	public class StreamBinaryEncoder<T> : BinaryCoder, IDataPacketHandler<T>
+	{
+        Streaming_Binary_Encoder_Worker<T> worker;
+        public EncodedData result { get; set; }
+        internal class Streaming_Binary_Encoder_Worker<X> : Binary_Encoder_Worker
+        {
+            Buffer<X> buff; bool complete = false;
+            System.Threading.Thread main_loop;
+            internal Streaming_Binary_Encoder_Worker() : base()
+            {
+                buff = new Buffer<X>();
+                main_loop = new System.Threading.Thread(main);
+                main_loop.Start();
+            }
+            internal void main() //consumer/producer pattern
+            {
+                output = new List<byte>(1024);
+                while (true)
+                {
+                    System.Threading.Thread.Sleep(10);
+                    lock (buff)
+                    {
+                        while (!complete && buff.Empty())
+                            System.Threading.Monitor.Wait(buff);
+
+                        if (complete && buff.Empty())
+                            break;
+
+                        process_bits(buff.Read());
+                        System.Threading.Monitor.Pulse(buff);
+                    }
+                }
+            }
+            internal void input(X data)
+            {
+                lock (buff)
+                {
+                    while (buff.Full())
+                        System.Threading.Monitor.Wait(buff);
+
+                    buff.Write(data);
+                    System.Threading.Monitor.Pulse(buff);
+                }
+            }
+            void process_bits(dynamic input)
+            {
+                var bytes = BitConverter.GetBytes(input);
+                BitArray temp = new BitArray(bytes);
+                foreach (bool bit in temp)
+                {
+                    process_bit(Convert.ToByte(bit));
+                }
+            }
+            internal override EncodedData finalise()
+            {
+                lock (buff)
+                {
+                    complete = true;
+                    System.Threading.Monitor.Pulse(buff);
+                }
+                main_loop.Join();
+                return base.finalise();
+            }
+            public override void Dispose()
+            {
+                base.Dispose();
+                main_loop = null;
+                buff = null;
+            }
+        }
+
+        public void Initialise(IDataPacketSender<T> sender)
+		{
+            worker = new Streaming_Binary_Encoder_Worker<T>();
+            sender.RegisterPacketHandler(this);
+        }
+        public void Input(T data)
+		{
+            worker.input(data);
+        }
+        public void Finalise()
+		{
+            result = worker.finalise();
+            worker.Dispose();
+            worker = null;
+        }
+
     }
 }
