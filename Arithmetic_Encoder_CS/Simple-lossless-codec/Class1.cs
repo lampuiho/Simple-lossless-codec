@@ -39,6 +39,28 @@ namespace Simple_lossless_codec
         }
     }
 	
+    public class BitWise_Byte_Buffer
+    {
+        byte buffer = 0, pos = 0;
+        
+        public bool push(bool input)
+        {
+            buffer >>= 1;
+
+            if (input)
+                buffer |= 0x80;
+
+            if (pos++ == 7)
+                return true;
+
+            return false;
+        }
+        public bool read()
+        {
+            bool result = ((buffer >> (8 - pos--)) & 0x01) > 0;
+            return result;
+        }
+    }
 	public class Buffer<T>
     {
         const int buf_size = 1048576;
@@ -81,24 +103,24 @@ namespace Simple_lossless_codec
         void RegisterPacketHandler(IDataPacketHandler<T> handler);
     }
 	
-	public abstract class ProbabilityAdaptor
-	{
-		uint[] symbol_count; //integrated
-	}
-
     public class BinaryCoder
     {
         const uint precision = sizeof(int)*8; const uint half = (uint.MaxValue >> 1) + 1;
         const uint quarter = (uint.MaxValue >> 2) + 1; const uint quarter_3 = (uint)0x3 << (sizeof(int)*8 - 2);
 
-        internal class Binary_Coder_Worker : IDisposable
+        internal abstract class Binary_Coder_Worker : IDisposable
         {
             internal const int byte_size = 8;
 
+            protected ProbabilityAdaptor adaptation_module = new BufferedBIPA();
             protected List<byte> output;
-            protected uint[] bit_count = new uint[2] { 3, 4 }; //keep size of bit_count half of sizeof(uint)*8 or overflow can occur
             protected byte current_byte = 0;
             protected uint position_count = 0, underflow = 0, low = 0, high = uint.MaxValue;
+
+            internal Binary_Coder_Worker() { }
+            internal Binary_Coder_Worker(ProbabilityAdaptor adap){
+				adaptation_module = adap;
+			}
 
             protected void emit_output()
             {
@@ -137,15 +159,16 @@ namespace Simple_lossless_codec
 
             protected virtual uint obtain_mid()
             {
-                uint dif = high - low;
-                uint temp = ((dif % bit_count[1] + 1) * bit_count[0]) / bit_count[1];
-                //divide first to avoid overflow
-                return low + dif / bit_count[1] * bit_count[0] + temp;
+                uint range = high - low;
+                uint CDF_Low = adaptation_module.CDF(true);
                 //feedback error for multiplication
+                uint temp = ((range % adaptation_module.CDF_T + 1) * CDF_Low) / adaptation_module.CDF_T;
+                //divide first to avoid overflow
+                return low + range / adaptation_module.CDF_T * CDF_Low + temp;
             }
             public virtual void Dispose()
             {
-                output = null; bit_count = null;
+                output = null; adaptation_module = null;
             }
         }
 
@@ -239,11 +262,13 @@ namespace Simple_lossless_codec
                 high = obtain_mid() - 1;
                 //bit_count[0]++; bit_count[1]++;//update probability for next step for each byte
                 //to be replaced by other adaptative algorithms (such aspartial matching)
+                adaptation_module.Add(false);
             }
             void high_range()
             {
                 low = obtain_mid();
                 //bit_count[1]++;
+                adaptation_module.Add(true);
             }
             public override void Dispose(){
                 base.Dispose();
@@ -281,16 +306,16 @@ namespace Simple_lossless_codec
                 {
                     emit_output();
                     high = temp_bound - 1;
-
                     //add low count
+                    adaptation_module.Add(false);
                 }
                 else
                 {
                     current_byte |= 0x80;
                     emit_output();
                     low = temp_bound;
-
                     //add high count
+                    adaptation_module.Add(true);
                 }
             }
             void check_range()
@@ -312,7 +337,7 @@ namespace Simple_lossless_codec
             {
                 if (low >= quarter && high < quarter_3)
                 {
-                    underflow++;
+                    //underflow++;
                     code = code - quarter;
                     low = low - quarter;
                     high = high - quarter;
