@@ -50,7 +50,9 @@ namespace Simple_lossless_codec
 
     public class ProbabilityAdaptor : ProbabilityModel
     {
-        protected const uint max_value = 0x1000000;
+        public const int shift_value = 24;
+        public const uint max_value = 1 << shift_value;
+        public const uint bit_mask = max_value - 1;
 
         public ProbabilityAdaptor(int MaxSymbolValue) : base(MaxSymbolValue)
         {
@@ -88,6 +90,51 @@ namespace Simple_lossless_codec
                 symbol_count[i]++;
         }
     }
+    public class BinaryProbabilityModel : ProbabilityAdaptor
+    {
+        public new const int shift_value = 32;
+        public new const uint max_value = uint.MaxValue;
+
+
+        public BinaryProbabilityModel() : base(0)
+        {
+            symbol_count[0] = uint.MaxValue >> 1;
+        }
+        public BinaryProbabilityModel(uint low_count, uint total_count) : base(0)
+        {
+            symbol_count[0] = (uint)((ulong)low_count * uint.MaxValue / total_count);
+        }
+        protected override void Init() {
+        }
+        public new uint CDF
+        {
+            get
+            {
+                return symbol_count[0];
+            }
+        }
+
+        public static uint get_low_count(byte[] array)
+        {
+            uint low = 0;
+            foreach (byte b in array)
+            {
+                var temp = b;
+                for (int i = 0; i < 8; ++i)
+                {
+                    if ((temp & 1) == 0)
+                        low++;
+                    temp >>= 1;
+                }
+            }
+            return low;
+        }
+        public static uint get_entropy(uint low, uint total)
+        {
+            double high = total - low;
+            return (uint)Math.Ceiling(low * Math.Log((double)total / (double)low, 2) + high * Math.Log((double)total / high, 2));
+        }
+    }
     public class BinaryIncrementProbilityAdpator : IncrementProbabilityAdaptor
     {
         public BinaryIncrementProbilityAdpator() : base(1)
@@ -106,7 +153,7 @@ namespace Simple_lossless_codec
                 return 0;
         }
     }
-    public class BufferedBIPA : BinaryIncrementProbilityAdpator
+    public class BufferedBIPA : BinaryProbabilityModel
     {
         BitWise_Byte_Buffer bit_buffer = new BitWise_Byte_Buffer();
 
@@ -118,50 +165,72 @@ namespace Simple_lossless_codec
                     base.Add(bit_buffer.read());
         }
     }
-    public class BinaryExpIncProbilityAdaptor : BinaryIncrementProbilityAdpator
+    public class BinaryExpIncProbilityAdaptor : BinaryProbabilityModel
     {
         const int power_factor = 4;
         //const int scale_factor = 1 << power_factor;
 
+        public BinaryExpIncProbilityAdaptor() : base() { }
+        public BinaryExpIncProbilityAdaptor(uint low_count, uint total_count):base(low_count, total_count) { }
         public override void Add(dynamic symbol)
         {
-            if ((bool)symbol == true)
+            if (symbol == 1)
                 symbol_count[0] -= symbol_count[0] >> power_factor;
             else
-                symbol_count[0] += (max_value - symbol_count[0]) >> power_factor;
+                symbol_count[0] += (max_value - symbol_count[0] + 1) >> power_factor;
         }
     }
-    public class ExpoIncProbabilityAdaptor : ProbabilityAdaptor
+    public class ExpoIncProbabilityAdaptor : ProbabilityAdaptor //clamping not fixed
     {
         protected const int power_factor = 4;
 
         public ExpoIncProbabilityAdaptor(int MaxSymbolValue) : base(MaxSymbolValue)
         {
         }
+        
+        protected override void Init()
+        {
+            /*
+            uint avg_chance = (uint)((max_value + 1) / symbol_count.Length);
+            symbol_count[0] = avg_chance;
+            for (int i = 1; i < symbol_count.Length; ++i)
+            {
+                symbol_count[i] = avg_chance + symbol_count[i - 1];
+            }
+            */
+            maxIndex = 80;
+            ProbilityDistributions.g_cdf.CopyTo(symbol_count, 0);
+        }
 
         public override void Add(dynamic symbol)
         {
-            for(int i = 0; i < symbol_count.Count(); ++i)
+            for(int i = 0; i < maxIndex; ++i)
                 symbol_count[i] -= (symbol_count[i] >> power_factor);
-            symbol_count[symbol] += (max_value >> power_factor);
+
+            for(int i = symbol; i < maxIndex; ++i)
+                symbol_count[i] += (max_value >> power_factor);
         }
     }
     public class MixedDistExpIncProbabilityAdaptor : ExpoIncProbabilityAdaptor
     {
-        uint[][] distributions;
-
+        uint[,] distributions;
         public MixedDistExpIncProbabilityAdaptor(int MaxSymbolValue) : base(MaxSymbolValue)
         {
-            init_distribution();
+        }
+
+        protected override void Init()
+        {
+            base.Init();
+            distributions = new uint[maxIndex + 1, maxIndex + 1];
+            for (int i = 0; i <= maxIndex; ++i)
+                for (int j = 0; j <= maxIndex; ++j)
+                    distributions[i, j] = ProbilityDistributions.u_cdf[i, j];
         }
 
         public override void Add(dynamic symbol)
         {
-            var distribution = distributions[symbol];
-            for (int i = 0; i < symbol_count.Count(); ++i)
-                symbol_count[i] += (distribution[i] - symbol_count[i]) >> power_factor;
+           for (int i = 0; i < maxIndex; ++i)
+                symbol_count[i] = (uint)(symbol_count[i] + (((int)distributions[symbol,i] - symbol_count[i]) >> power_factor));
         }
-
-        public void init_distribution() { }
     }
 }

@@ -23,8 +23,7 @@ namespace Simple_lossless_codec
                     high += 1.0;
             }
             double total = low + high;
-            low = low / (total); high = high / (total);
-            entropy = (int)Math.Ceiling((-(Math.Log(low, 2) + Math.Log(high, 2))));
+            entropy = (int)Math.Ceiling(low*Math.Log(total/low, 2) + high*Math.Log(total/high, 2));
         }
     }
 
