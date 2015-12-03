@@ -1,0 +1,17 @@
+# depslib dependency file v1.0
+1449060871 source:c:\users\joel\documents\lossless_codec_audio_c\main.c
+	<stdio.h>
+	<stdlib.h>
+	"codec.h"
+
+1449158335 c:\users\joel\documents\lossless_codec_audio_c\codec.h
+	<stdio.h>
+	<stdlib.h>
+	<unistd.h>
+	<math.h>
+	<string.h>
+	<time.h>
+
+1449157928 source:c:\users\joel\documents\lossless_codec_audio_c\codec.c
+	"codec.h"
+
