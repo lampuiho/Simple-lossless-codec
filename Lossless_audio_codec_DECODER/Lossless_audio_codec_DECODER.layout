@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<CodeBlocks_layout_file>
+	<ActiveTarget name="Debug" />
+	<File name="..\Lossless_Codec_Audio_C\codec.c" open="0" top="0" tabpos="0" split="0" active="1" splitpos="0" zoom_1="-2" zoom_2="0">
+		<Cursor>
+			<Cursor1 position="25106" topLine="154" />
+		</Cursor>
+		<Folding>
+			<Collapse line="6" />
+			<Collapse line="19" />
+			<Collapse line="42" />
+			<Collapse line="49" />
+			<Collapse line="65" />
+			<Collapse line="94" />
+			<Collapse line="137" />
+			<Collapse line="146" />
+			<Collapse line="200" />
+			<Collapse line="208" />
+			<Collapse line="279" />
+			<Collapse line="297" />
+			<Collapse line="307" />
+			<Collapse line="436" />
+			<Collapse line="475" />
+			<Collapse line="483" />
+			<Collapse line="492" />
+			<Collapse line="577" />
+			<Collapse line="755" />
+		</Folding>
+	</File>
+	<File name="main.c" open="1" top="1" tabpos="1" split="0" active="1" splitpos="0" zoom_1="0" zoom_2="0">
+		<Cursor>
+			<Cursor1 position="1266" topLine="34" />
+		</Cursor>
+	</File>
+	<File name="..\Lossless_Codec_Audio_C\codec.h" open="0" top="0" tabpos="0" split="0" active="1" splitpos="0" zoom_1="-2" zoom_2="0">
+		<Cursor>
+			<Cursor1 position="1897" topLine="46" />
+		</Cursor>
+	</File>
+</CodeBlocks_layout_file>
