@@ -369,7 +369,7 @@ void predictor_mono(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff){
 
             fclose(fpo); fclose(fpi);
             fflush(NULL) ;
-            return ;
+            return indice;
         }
 
 
@@ -379,7 +379,7 @@ void predictor_mono(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff){
         convert_to_short_int(abuf, qabuf, P);
 
         // Update output buffers for entropy coder and output file.
-        //update_output_buffers(outBuf, outCoeff, ebuf, qabuf, indice);
+       update_output_buffers(outBuf, outCoeff, ebuf, qabuf, indice);
 
     /**/
         printf("CHECK\n");
