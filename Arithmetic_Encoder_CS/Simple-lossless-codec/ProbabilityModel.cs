@@ -188,9 +188,9 @@ namespace Simple_lossless_codec
         public override void Add(dynamic symbol)
         {
             if (symbol == 1)
-                symbol_count[0] -= symbol_count[0] >> power_factor;
-            else
                 symbol_count[0] += (max_value - symbol_count[0] + 1) >> power_factor;
+            else
+                symbol_count[0] -= symbol_count[0] >> power_factor;
         }
     }
     public class ExpoIncProbabilityAdaptor : ProbabilityAdaptor //clamping not fixed

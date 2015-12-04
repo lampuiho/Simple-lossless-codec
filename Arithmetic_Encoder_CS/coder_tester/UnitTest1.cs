@@ -199,19 +199,20 @@ namespace coder_tester
         [TestMethod]
         public void BinaryCoderTest()
         {
-            //Packet_Sender bitstream = new Packet_Sender(sent_array);
-            byte[] original_data = Packet_Sender.GenerateRandom(10000).Select(x=>(byte)x).ToArray();
+            //byte[] original_data = Packet_Sender.GenerateRandom(10000).Select(x=>(byte)x).ToArray();
+            byte[] original_data = null;
+            Packet_Sender.ReadBytes(@"bytes", ref original_data);
             int[] table = new int[byte.MaxValue + 1];
             foreach (byte i in original_data)
                 table[i]++;
-            BinarySymbolBinaryRangeCoder.MoreZeroAdaptor s_adap = new BinarySymbolBinaryRangeCoder.MoreZeroAdaptor(table);
-            var sent_array = original_data.Select(x => (byte)s_adap.get_symbol(x)).ToArray();
-            //Packet_Sender.ReadBytes(@"bytes", ref original_data);
+            //BinarySymbolBinaryRangeCoder.MoreZeroAdaptor s_adap = new BinarySymbolBinaryRangeCoder.MoreZeroAdaptor(table);
+            //var sent_array = original_data.Select(x => (byte)s_adap.get_symbol(x)).ToArray();
+            var sent_array = original_data;
             uint low_count = BinaryProbabilityModel.get_low_count(sent_array);
             uint total_count = (uint)(sent_array.Length) * 8;
             //sent_array = null;
-            BinaryProbabilityModel p_model = new BinaryProbabilityModel(low_count, total_count);
-            //BinaryProbabilityModel p_model = new BinaryExpIncProbilityAdaptor(low_count, total_count);
+            //BinaryProbabilityModel p_model = new BinaryProbabilityModel(low_count, total_count);
+            BinaryProbabilityModel p_model = new BinaryExpIncProbilityAdaptor(low_count, total_count);
             BinaryEncoder encoder = new BinaryEncoder(p_model);
             Packet_Sender bitstream = new Packet_Sender(sent_array);
             encoder.Initialise(bitstream);
@@ -221,14 +222,15 @@ namespace coder_tester
             System.Diagnostics.Trace.Listeners.Add(new System.Diagnostics.ConsoleTraceListener());
             System.Diagnostics.Trace.WriteLine(string.Format("DataSize: {0}; Entropy: {1}; Encoded Size: {2}", total_count, entropy, encoder.result.Count * 8));
             System.Diagnostics.Trace.Flush();
-            //p_model = new BinaryExpIncProbilityAdaptor(low_count, total_count);
+            p_model = new BinaryExpIncProbilityAdaptor(low_count, total_count);
             BinaryDecoder decoder = new BinaryDecoder(p_model, bitstream.data.Length);
             Packet_Sender bitstream2 = new Packet_Sender(encoder.result.Select(x => (int)x).ToArray());
             decoder.Initialise(bitstream2);
             bitstream2.SendDataPeriodically(1);
             decoder.Finalise();
             encoder = null;
-            var decoded = decoder.result.Select(x => (byte) s_adap.get_output(x)).ToArray();
+            //var decoded = decoder.result.Select(x => (byte) s_adap.get_output(x)).ToArray();
+            var decoded = decoder.result.ToArray();
             Assert.IsTrue(decoded.Length == original_data.Length, "length not equal. decoded length: {0} as opposed to {1}", decoded.Length, original_data.Length);
 
             bool violation = false;
