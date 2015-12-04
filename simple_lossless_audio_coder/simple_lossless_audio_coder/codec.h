@@ -32,6 +32,21 @@ typedef	struct wave
     char data[4] ;
     unsigned long num_data ;
 } WAVE ;
+typedef struct {
+	uint32_t pos;
+	char* buf;
+} byte_buffer;
+typedef struct {
+	uint32_t low_count;
+	char max_index;
+	char* saved_indices;
+	char* encoded;
+} encode_save;
+typedef struct {
+	WAVE wave;
+	uint16_t* coeff;
+	encode_save en_s;
+};
 
 // TOOLS FOR LINEAR PREDICTION
 void ham_win(double d[], double t[], int n);

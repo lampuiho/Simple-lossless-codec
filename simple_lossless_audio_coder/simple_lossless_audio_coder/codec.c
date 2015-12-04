@@ -5,10 +5,6 @@
 #include "codec.h"
 #include "a_coder.h"
 
-typedef struct {
-	uint32_t pos;
-	char* buf;
-} byte_buffer;
 
 // Fill table containing each symbole and its number of occurences.
 void fill_entropy_table(short int *buf, short int *table, int tab_size){
@@ -516,7 +512,7 @@ uint32_t predictor_stereo(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff,  c
 }
 
 void write_to_buf(void* buf, uint32_t input) {
-	((byte_buffer*)buf)->buf[((byte_buffer*)buf)->pos++] = input;
+	((byte_buffer*)buf)->buf[((byte_buffer*)buf)->pos++] = (uint8_t)input;
 }
 
 void main_coder(char *outBuf, char *outCoeff, uint32_t size, byte_buffer** out_buf_ptr) {
@@ -526,10 +522,17 @@ void main_coder(char *outBuf, char *outCoeff, uint32_t size, byte_buffer** out_b
 	uint32_t count_table[256];
 	byte_buffer byte_buf;
 	get_count(count_table, 255, outBuf, size*N*2);
-	bin_p_init(&p, get_low_count(outBuf, size*N * 2), size * N * 2 * 8);
+	uint32_t low_count = get_low_count(outBuf, size*N * 2);
+	bin_p_init(&p, low_count, size * N * 2 * 8);
 	s_zero_adap_init(&s, count_table);
 	byte_buf.pos = 0;
-	byte_buf.buf = malloc(size * N * 2 * 8 + s.max_index);
+	byte_buf.buf = malloc(size * N * 2 * 8 + s.max_index + 5);
+	for (int i = 0; i < 4; ++i) {
+		write_to_buf(&byte_buf, (uint8_t)low_count);
+		low_count >>= 4;
+	}
+	write_to_buf(&byte_buf, s.max_index);
+	write_to_buf(&byte_buf, s.max_index);
 	for (int i = 0; i <= s.max_index; ++i)
 		write_to_buf(&byte_buf, s.saved_indices[i]);
 	en_init(&en, &p, &s, &byte_buf, write_to_buf);
@@ -584,10 +587,11 @@ void encoder_main(char input_name[], char output_name[]){
     {
     case  1  :
 		size = predictor_mono(fpi, fpo, predictor_output, predictor_coeff) ;
+		// entropy encoder
 		byte_buffer** buf;
 		main_coder(*predictor_output, *predictor_coeff, size, buf);
-        // entropy encoder
         // Free pointers
+		free(predictor_output);
         break ;
     case  2  :
         predictor_stereo(fpi, fpo, predictor_output, predictor_coeff, s_predictor_output, s_predictor_coeff) ;
