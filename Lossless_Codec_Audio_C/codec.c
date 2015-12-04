@@ -206,76 +206,44 @@ void convert_to_short_int(double *in, short int *out, int taille){
     }
 }
 
-void get_predictor(double dBuff[], double aBuff[], int w, int n, int p){
-    double pSig[W] = {0.0};
-    double fSig[W] = {0.0};
-    double cSig[W] = {0.0};
+void LPCCalculation(short int ibuf[], double nbuf[], double abuf[], short int pbuf[], double dpbuf[], short int ebuf[]){
+        printf("Converting...");
+        convert_to_double(ibuf, nbuf, W) ;            		// convert 16 bit data to floating point data
+        printf("\tDone\n\n");
 
-    double totSig[W] = {0.0};
+        printf("Getting predictor...\n");
+        get_predictor(nbuf, abuf, W, N, P) ;				        // find linear predictor coefficients
+
+        printf("\nPredicting future values... ");
+        predict(abuf, &nbuf[(W-N)/2], dpbuf, N, P) ;		    // implement predictor and generate predicted signal
+        printf("\tDone\n\n");
+
+        convert_to_short_int(dpbuf, pbuf, N);               // convert predicted values back to 16-bit data.
+
+        printf("Getting residual values... ");
+        get_residual(&ibuf[(W-N)/2], pbuf, ebuf, N) ;	    // compute residual signal between 16bit original
+        printf("\tDone\n\n");                               // and predicted signal
+}
+
+void get_predictor(double dBuff[], double aBuff[], int w, int n, int p){
+    double cSig[W] = {0.0};
     double rSig[P] = {0.0};
 
     double refCoeff = 0.0;
-    int x = 0;
-
-    // Work out the different parts needed to the overlapping.
-    for(x = 0; x < W-N; x++){
-        pSig[x] = 0;
-        fSig[x] = dBuff[x + (W-N)];
-    }
-    for(x = W - N; x < W; x++){
-        pSig[x] = dBuff[x - (W-N)];
-        fSig[x] = 0;
-    }
-
 
     // Perform Hamming windowing on various signals.
     printf("\tPerforming Hamming Windowing... ");
     ham_win(dBuff, cSig, w);
-    ham_win(pSig, pSig, w);
-    ham_win(fSig, fSig, w);
     printf("\tDone\n");
-
-    // Get every part where it needs to be
-
-    for(x = W-N; x < W; x++){
-        pSig[x - N] = pSig[x]; pSig[x] = 0;
-        fSig[x] = fSig[x - N]; fSig[x - N] = 0;
-    }
-
-
-    //for(x = 0; x < W; x++)
-    //    printf("pSig[%d] = %f \tfSig[%d] = %f\n", x, pSig[x], x, fSig[x]);
-    //for(x = 0; x < 10000000000; x++);
-
-
-    printf("\tOverlapping signals... ");
-    for(x = 0; x < W; x++){
-        //printf("[%d] : pSig[x] + cSig[x] +  fSig[x] = %f + %f + %f\n", x, pSig[x], cSig[x], fSig[x]);
-        totSig[x] = pSig[x] + cSig[x] +  fSig[x];
-        //totSig[x] = cSig[x] +  pSig[x];
-    }
-
-    //for(x = 0; x < 100000000000; x++);
-        //printf("pSig[%d] + cSig[%d] +  fSig[]", (W-1) - x, x, )
-    //printf("\tDone\n");
 
     // Calculate autocorrelation of the windowed signal.
-    printf("\tCalculating autocorrelation of the windowed OVERLAPPED signal... ");
-    calR(&totSig[N/4], rSig, N, P);
+    printf("\tCalculating autocorrelation of the windowed signal... ");
+    calR(&cSig[(W-N)/2], rSig, N, P);
     printf("\tDone\n");
-
-    //for(x = 0; x < W; x++)
-        //printf("dBuff[%d] = %f \tfSig[%d] = %f\n", x, pSig[x], x, fSig[x]);
-    //for(x = 0; x < 10000000000; x++);
 
     // Calculate lpc coefficients using Levinson algorithm.
     printf("\tCalculating LPC... ");
     refCoeff = calA(rSig, aBuff, P);
-
-    //printf("\n\n");
-    //for(x = 0; x < P; x++)
-        //printf("\tCoeff %d = %f\n", x, aBuff[x]);
-    //for(x = 0; x < 1000000000; x++);
 
     //printf("  Variance : %f  ", refCoeff);
     printf("\tDone\n");
@@ -304,18 +272,43 @@ void get_residual(short int *iBuff, short int *pBuff, short int *eBuff, int n){
     for(i = 0; i < n; i++)
     {
         //printf("eBuff[%d] = iBuff[%d] - pBuff[%d] = %d - %d = %d\n", i, (W-N)/2 + i,i, iBuff[i], pBuff[i], iBuff[i] - pBuff[i]);
-        eBuff[i] = iBuff[i] + pBuff[i];
+        eBuff[i] = iBuff[i] - pBuff[i];
         //for(x = 0; x < 1000000000; x++);
     }
 }
 
-void encode_mono(FILE *fpi, FILE *fpo){
+void update_output_buffers(char *outBuf, char *outCoeff, short int ebuf[], short int qabuf[], int indice){
+    int x;
+    // Update output buffer for encoder.
+    outBuf = realloc(outBuf, 512*indice*sizeof(char));
+    if(outBuf == NULL)
+        return;
+    for(x = (indice - 1)*2*N ; x < indice*2*N; x += 2){
+        outBuf[x] = ebuf[x/2 - (indice - 1)*N] & 0xff;
+        outBuf[x + 1] = ebuf[x/2 - (indice - 1)*N] >> 8;
+    }
+
+    outCoeff = realloc(outCoeff, 32*indice*sizeof(char));
+    if(outCoeff == NULL)
+        return;
+    for(x = (indice -1)*2*P; x < indice*2*P; x += 2){
+        outCoeff[x] = qabuf[x/2 - (indice - 1)*P] & 0xff;
+        outCoeff[x+1] = qabuf[x/2 - (indice - 1)*P] >> 8;
+    }
+}
+
+void predictor_mono(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff){
+
+    outBuf = malloc(512*sizeof(char));
+    outCoeff = malloc(32*sizeof(char));
+
     short int ibuf[W] = {0} ;		// input buffer for 16 bit data
     double nbuf[W] = {0.0} ;		// input buffer for floating arithmetic
     short int pbuf[N] = {0} ;		// buffer for the predicted signal
     double dpbuf[N] = {0} ;		    // buffer for the predicted signal
     short int ebuf[N] = {0} ;		// buffer for the residual (error) signal
     double abuf[P] = {0.0} ;		// predictor coefficients
+    short int qabuf[P] = {0} ;		// predictor coefficients
 
     // Entropy calculation variables
     short int residual_entropy_table[65535] = {0};
@@ -345,8 +338,7 @@ void encode_mono(FILE *fpi, FILE *fpo){
 
     for(;;)
     {
-        //for(x = 0; x < 125000000; x++);
-        //scanf("%d", &x);
+        for(x = 0; x < 1250000000; x++);
         system("cls");
 
         printf("SAMPLE %d\n\n", indice++);
@@ -354,9 +346,10 @@ void encode_mono(FILE *fpi, FILE *fpo){
         n = readdata(fpi, &ibuf[W-N], N) ;
         if(n != N)
         {
+            // file end, need to finish off the remaining data here
+
             system("cls");
 
-            // file end, need to finish off the remaining data here
             residual_entropy = compute_entropy_table(residual_entropy_table, 65535);
             original_entropy = compute_entropy_table(original_entropy_table, 65535);
 
@@ -379,66 +372,31 @@ void encode_mono(FILE *fpi, FILE *fpo){
             return ;
         }
 
-        printf("Converting...");
-        convert_to_double(ibuf, nbuf, W) ;            		// convert 16 bit data to floating point data
-        printf("\tDone\n\n");
 
-        printf("Getting predictor...\n");
-        get_predictor(nbuf, abuf, W, N, P) ;				        // find linear predictor coefficients
+        LPCCalculation(ibuf, nbuf, abuf, pbuf, dpbuf, ebuf);
 
-        printf("\nPredicting future values... ");
-        predict(abuf, &nbuf[(W-N)/2], dpbuf, N, P) ;		    // implement predictor and generate predicted signal
-        printf("\tDone\n\n");
+        // Quantize coefficients (this is just a conversion to 16-bit integer, not a proper quantization)
+        convert_to_short_int(abuf, qabuf, P);
 
-        convert_to_short_int(dpbuf, pbuf, N);               // convert predicted values back to 16-bit data.
-
-        printf("Getting residual values... ");
-        get_residual(&ibuf[(W-N)/2], pbuf, ebuf, N) ;	    // compute residual signal between 16bit original
-        printf("\tDone\n\n");                               // and predicted signal
-
-
-        // Write binary output to file.
-        /*
-        for(i = 0; i < N; i++){
-            c &= ebuf[i];
-            fprintf(fpo, "%c", c);
-            fprintf(fpo, "%c", ebuf[i] >> 8);
-            c = 0xff;
-        }
-        */
-
-        //fwrite(abuf, sizeof(short int), 16, fpo);
-        //fwrite(ebuf, sizeof(short int), N, fpo);
-
-        // need to quantize linear predictive coefficients and save them as side information
-        // printf("Quantizing LPC... ");
-        // quantize(abuf, qabuf, P);
-        // printf("\tDone\n\n");
+        // Update output buffers for entropy coder and output file.
+        //update_output_buffers(outBuf, outCoeff, ebuf, qabuf, indice);
 
     /**/
         printf("CHECK\n");
         for(x = 0; x < 42; x++)
-            printf("\t[%2d]   Original Signal : %6d\t  Residual Signal = %6d\t[%d]   Original Signal : %6d\t  Residual Signal = %6d\t[%3d]   Original Signal : %6d\tResidual Signal = %6d\n", x, ibuf[(W-N)/2 + x], ebuf[x], x + 42, ibuf[(W-N)/2 + x + 42], ebuf[x + 42], x + 84, ibuf[(W-N)/2 + x + 84], ebuf[x + 84]);
+            printf("\t[%2d]   Original Signal : %6d\t  Residual Signal = %6d\t[%d]   Original Signal : %6d\t  Residual Signal = %6d\t[%3d]   Original Signal : %6d\tResidual Signal = %6d\n", x, ibuf[(W-N)/2 + x], ebuf[x], x + 115, ibuf[(W-N)/2 + x + 115], ebuf[x + 115], x + 213, ibuf[(W-N)/2 + x + 213], ebuf[x + 213]);
     /**/
 
+        // Copy last part of ibuf -> 50% Overlapping
         memcpy(ibuf, &ibuf[N], W);
 
-        /*
-            write(fpo, oBuff, p);
-            entropy_code(ebuf, codedata, N) ;				// entropy coding
-            write(fpo, codedata, outbytecount) ;			// write compressed data to file
-            codedata[0] = codedata[outbytecount] ;			// reset packing code buffer
-            outbitcount = outbitcount - 8*outbytecount ;
-            outbytecount = 0 ;
-        */
-
+        // Fill entropy tables
         fill_entropy_table(ebuf, residual_entropy_table, N);
         fill_entropy_table(ibuf, original_entropy_table, N);
-
     }
 }
 
-void encode_stereo(FILE *fpi, FILE *fpo){
+void predictor_stereo(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff,  char *soutBuf, char *soutCoeff){
 
     short int lbuf[W] = {0};        // input buffer for 16bit integer data - Left
     short int rbuf[W] = {0};        // input buffer for 16bit integer data - Right
@@ -457,6 +415,9 @@ void encode_stereo(FILE *fpi, FILE *fpo){
 
     double albuf[P] = {0.0} ;		// predictor coefficients - Left
     double arbuf[P] = {0.0} ;		// predictor coefficients - Right
+
+    short int qalbuf[P] = {0} ;		// predictor coefficients - Left
+    short int qarbuf[P] = {0} ;		// predictor coefficients - Right
 
     // Entropy calculation variables
     short int residual_entropy_table[65535] = {0};
@@ -487,9 +448,7 @@ void encode_stereo(FILE *fpi, FILE *fpo){
     for(;;)
     {
         //for(x = 0; x < 1250000000; x++);
-        //scanf("%d", &x);
         system("cls");
-
         printf("SAMPLE %d\n\n", indice++);
 
     n = readdata_stereo(fpi, &rbuf[N], &lbuf[N], W-N);
@@ -520,11 +479,6 @@ void encode_stereo(FILE *fpi, FILE *fpo){
             return ;
         }
 
-        printf("Converting...");
-        convert_to_double(lbuf, nlbuf, W) ;            		// convert 16 bit data to floating point data
-        convert_to_double(rbuf, nrbuf, W) ;            		// convert 16 bit data to floating point data
-        printf("\tDone\n\n");
-
         printf("Mixing stereo signals... ");                // Mix the two stereo signals.
         for(x = 0; x < W; x++){
             lbuf[x] = lbuf[x] + rbuf[x];
@@ -532,55 +486,36 @@ void encode_stereo(FILE *fpi, FILE *fpo){
         }
         printf("\tDone\n\n");
 
-        printf("Getting predictor...\n");
-        get_predictor(nlbuf, albuf, W, N, P) ;				        // find linear predictor coefficients
-        get_predictor(nrbuf, arbuf, W, N, P) ;				        // find linear predictor coefficients
+        // Compute LPC coefficients, predict signal, and compute residual signal.
+        LPCCalculation(lbuf, nlbuf, albuf, plbuf, dplbuf, elbuf);
+        LPCCalculation(rbuf, nrbuf, arbuf, prbuf, dprbuf, erbuf);
 
-        printf("\nPredicting future values... ");
-        predict(albuf, &nlbuf[(W-N)/2], dplbuf, N, P) ;		    // implement predictor and generate predicted signal
-        predict(arbuf, &nrbuf[(W-N)/2], dprbuf, N, P) ;		    // implement predictor and generate predicted signal
-        printf("\tDone\n\n");
+        // Quantize coefficients (this is just a conversion to 16-bit integer, not a proper quantization)
+        convert_to_short_int(albuf, qalbuf, P);
+        convert_to_short_int(arbuf, qarbuf, P);
 
-        //printf("Converting...");
-        convert_to_short_int(dplbuf, plbuf, N);               // convert predicted values back to 16-bit data.
-        convert_to_short_int(dprbuf, prbuf, N);               // convert predicted values back to 16-bit data.
-        //printf("\tDone\n\n");
-
-        printf("Getting residual values... ");
-        get_residual(&lbuf[(W-N)/2], plbuf, elbuf, N) ;	    // compute residual signal between 16bit original
-        get_residual(&rbuf[(W-N)/2], prbuf, erbuf, N) ;	    // compute residual signal between 16bit original
-        printf("\tDone\n\n");                               // and predicted signal
-
-        //fwrite(abuf, sizeof(short int), 16, fpo);
-        //fwrite(ebuf, sizeof(short int), N, fpo);
-
-        // need to quantize linear predictive coefficients and save them as side information
-        // printf("Quantizing LPC... ");
-        // quantize(abuf, qabuf, P);
-        // printf("\tDone\n\n");
+        // Update output buffers for entropy coder and output file.
+        update_output_buffers(outBuf, outCoeff, elbuf, qalbuf, indice);
+        update_output_buffers(outBuf, outCoeff, erbuf, qarbuf, indice);
 
         memcpy(lbuf, &lbuf[N], W);
         memcpy(rbuf, &rbuf[N], W);
-
-        /*
-            write(fpo, oBuff, p);
-            entropy_code(ebuf, codedata, N) ;				// entropy coding
-            write(fpo, codedata, outbytecount) ;			// write compressed data to file
-            codedata[0] = codedata[outbytecount] ;			// reset packing code buffer
-            outbitcount = outbitcount - 8*outbytecount ;
-            outbytecount = 0 ;
-        */
 
         fill_entropy_table(elbuf, residual_entropy_table, N);
         fill_entropy_table(erbuf, residual_entropy_table, N);
         fill_entropy_table(lbuf, original_entropy_table, N);
         fill_entropy_table(rbuf, original_entropy_table, N);
-
     }
 }
 
 void encoder_main(char input_name[], char output_name[]){
+
     FILE	*fpi, *fpo ;
+
+    char *predictor_output;
+    char *predictor_coeff;
+    char *s_predictor_output;
+    char *s_predictor_coeff;
 
     if((fpi = fopen(input_name, "rb")) == NULL)
     {
@@ -594,7 +529,6 @@ void encoder_main(char input_name[], char output_name[]){
         return ;
     }
 
-    // ADDED
     WAVE header;
 
     long totaldata = prepareFile(fpi, &header);
@@ -617,10 +551,14 @@ void encoder_main(char input_name[], char output_name[]){
     switch(header.mode)
     {
     case  1  :
-        encode_mono(fpi, fpo) ;
+        predictor_mono(fpi, fpo, predictor_output, predictor_coeff) ;
+        // entropy encoder
+        // Free pointers
         break ;
     case  2  :
-        encode_stereo(fpi, fpo) ;
+        predictor_stereo(fpi, fpo, predictor_output, predictor_coeff, s_predictor_output, s_predictor_coeff) ;
+        // entropy encoder
+        // Free pointers
         break ;
     default  :
         printf("Only Mono and Stereo Modes are supported!") ;

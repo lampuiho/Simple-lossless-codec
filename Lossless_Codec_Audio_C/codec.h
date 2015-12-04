@@ -14,7 +14,7 @@
 
 #define	W	512		// window size
 #define	N	256		// frame shift
-#define	P	32		// linear prediction order
+#define	P	16		// linear prediction order
 
 #define MAX_CODE_SIZE 272 // 256 entropy coded residual error + 16 LPC coefficients.
 
@@ -44,6 +44,8 @@ void get_predictor(double dBuff[], double aBuff[], int w, int n, int p);
 void predict(double *aBuff, double *iBuff, double *pBuff, int n, int p);
 void get_residual(short int *iBuff, short int *pBuff, short int *eBuff, int n);
 void quantize(double *iBuff, short int *oBuff, int p);
+void LPCCalculation(short int ibuf[], double nbuf[], double abuf[], short int pbuf[], double dpbuf[], short int ebuf[]);
+void update_output_buffers(char *outBuf, char *outCoeff, short int ebuf[], short int qabuf[], int indice);
 
 // TOOLS FOR FILE READING
 long prepareFile(FILE *fpi, WAVE *header);
@@ -55,8 +57,8 @@ void subpack(unsigned char c, int nbit, int *outbitcount, int *outbytecount, uns
 void pack(unsigned long c, int nbit, int *outbitcount, int *outbytecount, unsigned char codedata[]);
 
 // ENCODER FUNCTIONS
-void encode_mono(FILE *fpi, FILE *fpo);
-void encode_stereo(FILE *fpi, FILE *fpo);
+void predictor_mono(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff);
+void predictor_stereo(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff,  char *soutBuf, char *soutCoeff);
 void encoder_main(char input_name[], char output_name[]);
 
 // DECODER FUNCTIONS
