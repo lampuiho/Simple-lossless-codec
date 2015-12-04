@@ -46,7 +46,7 @@ typedef struct {
 	WAVE wave;
 	uint16_t* coeff;
 	encode_save en_s;
-};
+} codec_output;
 
 // TOOLS FOR LINEAR PREDICTION
 void ham_win(double d[], double t[], int n);
