@@ -516,8 +516,7 @@ uint32_t predictor_stereo(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff,  c
 }
 
 void write_to_buf(void* buf, uint32_t input) {
-	static uint32_t index = 0;
-	((byte_buffer*)buf)->buf[index++] = input;
+	((byte_buffer*)buf)->buf[((byte_buffer*)buf)->pos++] = input;
 }
 
 void main_coder(char *outBuf, char *outCoeff, uint32_t size, byte_buffer** out_buf_ptr) {
@@ -529,7 +528,10 @@ void main_coder(char *outBuf, char *outCoeff, uint32_t size, byte_buffer** out_b
 	get_count(count_table, 255, outBuf, size*N*2);
 	bin_p_init(&p, get_low_count(outBuf, size*N * 2), size * N * 2 * 8);
 	s_zero_adap_init(&s, count_table);
-	byte_buf.buf = malloc(size * N * 2 * 8);
+	byte_buf.pos = 0;
+	byte_buf.buf = malloc(size * N * 2 * 8 + s.max_index);
+	for (int i = 0; i <= s.max_index; ++i)
+		write_to_buf(&byte_buf, s.saved_indices[i]);
 	en_init(&en, &p, &s, &byte_buf, write_to_buf);
 	for (uint32_t i = 0; i < size * N * 2 * 8; ++i) {
 		coder_input(&en.rc, outBuf[i]);
