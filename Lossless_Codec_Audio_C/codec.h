@@ -14,7 +14,7 @@
 
 #define	W	512		// window size
 #define	N	256		// frame shift
-#define	P	16		// linear prediction order
+#define	P	16  	// linear prediction order
 
 #define MAX_CODE_SIZE 272 // 256 entropy coded residual error + 16 LPC coefficients.
 
@@ -57,7 +57,7 @@ void subpack(unsigned char c, int nbit, int *outbitcount, int *outbytecount, uns
 void pack(unsigned long c, int nbit, int *outbitcount, int *outbytecount, unsigned char codedata[]);
 
 // ENCODER FUNCTIONS
-void predictor_mono(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff);
+int predictor_mono(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff);
 void predictor_stereo(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff,  char *soutBuf, char *soutCoeff);
 void encoder_main(char input_name[], char output_name[]);
 

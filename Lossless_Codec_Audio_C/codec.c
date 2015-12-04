@@ -3,7 +3,7 @@
 */
 #include "codec.h"
 
-// Fill table containing each symbole and its number of occurences.
+// Fill table containing each symbol and its number of occurence.
 void fill_entropy_table(short int *buf, short int *table, int tab_size){
     int i;
     for(i = 0; i < tab_size; i++)
@@ -15,7 +15,7 @@ void fill_entropy_table(short int *buf, short int *table, int tab_size){
     }
 }
 
-// From a table containing symboles and their occurence number,
+// From a table containing symbols and their occurence number,
 // compute total entropy of a signal.
 double compute_entropy_table(short int *table, int tab_size){
     int i, nb_symb;
@@ -135,6 +135,7 @@ long prepareFile(FILE *fpi, WAVE *header){
     return(totaldata) ;
 }
 
+// Read data from file
 int	readdata(FILE *fp, short int ibuf[], int n){
     int	m ;
 
@@ -144,16 +145,22 @@ int	readdata(FILE *fp, short int ibuf[], int n){
     return(m) ;
 }
 
+// Read data from stereo file
 int	readdata_stereo(FILE *fp, short int ibuf[], short int sbuf[], int n){
-    int	m, s, x;
+    int	m, x;
 
-    for(x = 0; x < n; x++){
-        m = fread(ibuf, sizeof(short int), 1, fp);
-        s = fread(ibuf, sizeof(short int), 1, fp);
-        if(m == -1 || s == -1)
-            return(-1) ;
+    //for(x = 0; x < n; x++){
+    m = fread(ibuf, sizeof(short int), n, fp);
+    if(m == -1)
+        return(-1) ;
+
+    for(x = 0; x < n; x+= 2)
+        sbuf[x] = ibuf[x/2];
+    for(x = 0; x < n; x+= 1){
+        ibuf[x] = ibuf[2*x + 1];
     }
-    return(m + s) ;
+
+    return(m);
 }
 
 // Rountine for packing data in 1 to 16 bits long into codedata buffer
@@ -190,41 +197,25 @@ void pack(unsigned long c, int nbit, int *outbitcount, int *outbytecount, unsign
     subpack((unsigned char)(c & 0xff), nbit,  outbitcount, outbytecount, codedata) ;
 }
 
+// Convert table to double from short int
 void convert_to_double(short int bIn[], double bOut[], int w){
-    int i=0, x= 0;
+    int i=0;
     for(i=0; i < w; i++)
     {
         bOut[i] = ((double)bIn[i])/((int)32768);
     }
 }
 
+// Convert table to short int from double
 void convert_to_short_int(double *in, short int *out, int taille){
-    int i=0, x= 0;
+    int i=0;
     for(i=0; i < taille; i++)
     {
         out[i] = (short int)(in[i] * 0x7fff);
     }
 }
 
-void LPCCalculation(short int ibuf[], double nbuf[], double abuf[], short int pbuf[], double dpbuf[], short int ebuf[]){
-        printf("Converting...");
-        convert_to_double(ibuf, nbuf, W) ;            		// convert 16 bit data to floating point data
-        printf("\tDone\n\n");
-
-        printf("Getting predictor...\n");
-        get_predictor(nbuf, abuf, W, N, P) ;				        // find linear predictor coefficients
-
-        printf("\nPredicting future values... ");
-        predict(abuf, &nbuf[(W-N)/2], dpbuf, N, P) ;		    // implement predictor and generate predicted signal
-        printf("\tDone\n\n");
-
-        convert_to_short_int(dpbuf, pbuf, N);               // convert predicted values back to 16-bit data.
-
-        printf("Getting residual values... ");
-        get_residual(&ibuf[(W-N)/2], pbuf, ebuf, N) ;	    // compute residual signal between 16bit original
-        printf("\tDone\n\n");                               // and predicted signal
-}
-
+// Compute predictor coefficients
 void get_predictor(double dBuff[], double aBuff[], int w, int n, int p){
     double cSig[W] = {0.0};
     double rSig[P] = {0.0};
@@ -238,7 +229,7 @@ void get_predictor(double dBuff[], double aBuff[], int w, int n, int p){
 
     // Calculate autocorrelation of the windowed signal.
     printf("\tCalculating autocorrelation of the windowed signal... ");
-    calR(&cSig[(W-N)/2], rSig, N, P);
+    calR(cSig, rSig, W, P);
     printf("\tDone\n");
 
     // Calculate lpc coefficients using Levinson algorithm.
@@ -249,6 +240,7 @@ void get_predictor(double dBuff[], double aBuff[], int w, int n, int p){
     printf("\tDone\n");
 }
 
+// Predict signal based on coefficients and signal
 void predict(double *aBuff, double *iBuff, double *pBuff, int n, int p){
     int i, j, x;
     double tmpPBuff[N] = {0.0};
@@ -267,23 +259,45 @@ void predict(double *aBuff, double *iBuff, double *pBuff, int n, int p){
     }
 }
 
+// Compute residual signal from input signal and predicted values
 void get_residual(short int *iBuff, short int *pBuff, short int *eBuff, int n){
     int i, x;
     for(i = 0; i < n; i++)
     {
         //printf("eBuff[%d] = iBuff[%d] - pBuff[%d] = %d - %d = %d\n", i, (W-N)/2 + i,i, iBuff[i], pBuff[i], iBuff[i] - pBuff[i]);
-        eBuff[i] = iBuff[i] - pBuff[i];
+        eBuff[i] = iBuff[i] + pBuff[i];
         //for(x = 0; x < 1000000000; x++);
     }
 }
 
+// LPC Process
+void LPCCalculation(short int ibuf[], double nbuf[], double abuf[], short int pbuf[], double dpbuf[], short int ebuf[]){
+        printf("Converting...");
+        convert_to_double(ibuf, nbuf, W) ;            		// convert 16 bit data to floating point data
+        printf("\tDone\n\n");
+
+        printf("Getting predictor...\n");
+        get_predictor(nbuf, abuf, W, N, P) ;				// find linear predictor coefficients
+
+        printf("\nPredicting future values... ");
+        predict(abuf, &nbuf[(W-N)/2], dpbuf, N, P) ;	    // implement predictor and generate predicted signal
+        printf("\tDone\n\n");
+
+        convert_to_short_int(dpbuf, pbuf, N);               // convert predicted values back to 16-bit data.
+
+        printf("Getting residual values... ");
+        get_residual(&ibuf[(W-N)/2], pbuf, ebuf, N) ;	    // compute residual signal between 16bit original
+        printf("\tDone\n\n");                               // and predicted signal
+}
+
+// Update output buffers for output file and entropy coder
 void update_output_buffers(char *outBuf, char *outCoeff, short int ebuf[], short int qabuf[], int indice){
     int x;
     // Update output buffer for encoder.
     outBuf = realloc(outBuf, 512*indice*sizeof(char));
     if(outBuf == NULL)
         return;
-    for(x = (indice - 1)*2*N ; x < indice*2*N; x += 2){
+    for(x = (indice - 1)*2*N + (W-N)/2; x < indice*2*N; x += 2){
         outBuf[x] = ebuf[x/2 - (indice - 1)*N] & 0xff;
         outBuf[x + 1] = ebuf[x/2 - (indice - 1)*N] >> 8;
     }
@@ -291,16 +305,17 @@ void update_output_buffers(char *outBuf, char *outCoeff, short int ebuf[], short
     outCoeff = realloc(outCoeff, 32*indice*sizeof(char));
     if(outCoeff == NULL)
         return;
-    for(x = (indice -1)*2*P; x < indice*2*P; x += 2){
+    for(x = (indice -1)*2*P ; x < indice*2*P; x += 2){
         outCoeff[x] = qabuf[x/2 - (indice - 1)*P] & 0xff;
         outCoeff[x+1] = qabuf[x/2 - (indice - 1)*P] >> 8;
     }
 }
 
-void predictor_mono(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff){
+// Predictor mono
+int predictor_mono(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff){
 
-    outBuf = malloc(512*sizeof(char));
-    outCoeff = malloc(32*sizeof(char));
+    char ToutBuf = malloc(512*sizeof(char));
+    char ToutCoeff = malloc(32*sizeof(char));
 
     short int ibuf[W] = {0} ;		// input buffer for 16 bit data
     double nbuf[W] = {0.0} ;		// input buffer for floating arithmetic
@@ -336,9 +351,15 @@ void predictor_mono(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff){
         return ;
     }
 
+    // Write the initial condition.
+    for(x = 0; x <(W-N)/2; x+= 2){
+        outBuf[x] = ibuf[x/2] & 0xff;
+        outBuf[x + 1] = ibuf[x/2] >> 8;
+    }
+
     for(;;)
     {
-        for(x = 0; x < 1250000000; x++);
+        //for(x = 0; x < 1250000000; x++);
         system("cls");
 
         printf("SAMPLE %d\n\n", indice++);
@@ -379,9 +400,9 @@ void predictor_mono(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff){
         convert_to_short_int(abuf, qabuf, P);
 
         // Update output buffers for entropy coder and output file.
-       update_output_buffers(outBuf, outCoeff, ebuf, qabuf, indice);
+        // update_output_buffers(outBuf, outCoeff, ebuf, qabuf, indice);
 
-    /**/
+    /*
         printf("CHECK\n");
         for(x = 0; x < 42; x++)
             printf("\t[%2d]   Original Signal : %6d\t  Residual Signal = %6d\t[%d]   Original Signal : %6d\t  Residual Signal = %6d\t[%3d]   Original Signal : %6d\tResidual Signal = %6d\n", x, ibuf[(W-N)/2 + x], ebuf[x], x + 115, ibuf[(W-N)/2 + x + 115], ebuf[x + 115], x + 213, ibuf[(W-N)/2 + x + 213], ebuf[x + 213]);
@@ -396,6 +417,7 @@ void predictor_mono(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff){
     }
 }
 
+// Predictor stereo
 void predictor_stereo(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff,  char *soutBuf, char *soutCoeff){
 
     short int lbuf[W] = {0};        // input buffer for 16bit integer data - Left
@@ -421,8 +443,12 @@ void predictor_stereo(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff,  char 
 
     // Entropy calculation variables
     short int residual_entropy_table[65535] = {0};
+    short int s_residual_entropy_table[65535] = {0};
     short int original_entropy_table[65535] = {0};
+    short int s_original_entropy_table[65535] = {0};
     double residual_entropy = 0.0;
+    double s_residual_entropy = 0.0;
+    double s_original_entropy = 0.0;
     double original_entropy = 0.0;
 
     char c = 0xff;
@@ -436,10 +462,10 @@ void predictor_stereo(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff,  char 
     // Begin clock for execution time calculation.
     begin = clock();
 
-    n = readdata_stereo(fpi, rbuf, lbuf, W-N);
+    n = readdata_stereo(fpi, rbuf, lbuf, 2*(W-N));
     if(n != 2*(W-N))
     {
-        printf("\nn = %d and W-N = %d", n, W-N);
+        printf("\nn = %d auuund W-N = %d", n, 2*(W-N));
         printf("\nFlushing files");
         fflush(NULL) ;
         return ;
@@ -451,22 +477,27 @@ void predictor_stereo(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff,  char 
         system("cls");
         printf("SAMPLE %d\n\n", indice++);
 
-    n = readdata_stereo(fpi, &rbuf[N], &lbuf[N], W-N);
+    n = readdata_stereo(fpi, &rbuf[N], &lbuf[N], 2*(W-N));
     if(n != 2*(W-N))
         {
             system("cls");
 
             // file end, need to finish off the remaining data here
             residual_entropy = compute_entropy_table(residual_entropy_table, 65535);
+            s_residual_entropy = compute_entropy_table(s_residual_entropy_table, 65535);
             original_entropy = compute_entropy_table(original_entropy_table, 65535);
+            s_original_entropy = compute_entropy_table(s_original_entropy_table, 65535);
 
             // Print out summary.
             printf("******** SUMMARY ********\n\n");
             printf("FILTER ORDER : %d\n\n", P);
             printf("NUMBER OF SAMPLES ENCODED : %d\n\n", indice);
-            printf("INPUT SIGNAL ENTROPY : %6f  bits per symbol\n", original_entropy);
-            printf("RESIDUAL ERROR ENTROPY : %6f  bits per symbol\n", residual_entropy);
-            printf("ENTROPY GAINED : %f", residual_entropy - original_entropy);
+            printf("INPUT CH1 SIGNAL ENTROPY : %6f  bits per symbol\n", original_entropy);
+            printf("INPUT CH2 SIGNAL ENTROPY : %6f  bits per symbol\n", s_original_entropy);
+            printf("RESIDUAL CH1 ERROR ENTROPY : %6f  bits per symbol\n", residual_entropy);
+            printf("RESIDUAL CH2 ERROR ENTROPY : %6f  bits per symbol\n", s_residual_entropy);
+            printf("ENTROPY GAINED CH1: %f", residual_entropy - original_entropy);
+            printf("ENTROPY GAINED CH2: %f", s_residual_entropy - s_original_entropy);
 
             end = clock();
             time_spent = (double)(end - begin) / CLOCKS_PER_SEC;
@@ -491,23 +522,24 @@ void predictor_stereo(FILE *fpi, FILE *fpo, char *outBuf, char *outCoeff,  char 
         LPCCalculation(rbuf, nrbuf, arbuf, prbuf, dprbuf, erbuf);
 
         // Quantize coefficients (this is just a conversion to 16-bit integer, not a proper quantization)
-        convert_to_short_int(albuf, qalbuf, P);
-        convert_to_short_int(arbuf, qarbuf, P);
+        //convert_to_short_int(albuf, qalbuf, P);
+        //convert_to_short_int(arbuf, qarbuf, P);
 
         // Update output buffers for entropy coder and output file.
-        update_output_buffers(outBuf, outCoeff, elbuf, qalbuf, indice);
-        update_output_buffers(outBuf, outCoeff, erbuf, qarbuf, indice);
+        //update_output_buffers(outBuf, outCoeff, elbuf, qalbuf, indice);
+        //update_output_buffers(outBuf, outCoeff, erbuf, qarbuf, indice);
 
         memcpy(lbuf, &lbuf[N], W);
         memcpy(rbuf, &rbuf[N], W);
 
         fill_entropy_table(elbuf, residual_entropy_table, N);
-        fill_entropy_table(erbuf, residual_entropy_table, N);
+        fill_entropy_table(erbuf, s_residual_entropy_table, N);
         fill_entropy_table(lbuf, original_entropy_table, N);
-        fill_entropy_table(rbuf, original_entropy_table, N);
+        fill_entropy_table(rbuf, s_original_entropy_table, N);
     }
 }
 
+// Main encoder, calls predictor and entropy methods.
 void encoder_main(char input_name[], char output_name[]){
 
     FILE	*fpi, *fpo ;
@@ -568,6 +600,7 @@ void encoder_main(char input_name[], char output_name[]){
     fflush(NULL) ;
 }
 
+// Main decoder function for mono tracks.
 void decode_mono(FILE *fpi, FILE *fpo){
     short int ibuf[W] = {0} ;		// input buffer for 16 bit data
     double nbuf[W] = {0.0} ;		// input buffer for floating arithmetic

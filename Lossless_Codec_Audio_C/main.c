@@ -6,7 +6,7 @@
 
 int main()
 {
-    char input_name[] = "music_source.wav";
+    char input_name[] = "music_source_stereo.wav";
     char output_name[] = "encoded_music_source.lac";
     int choice = 0;
 
