@@ -11,7 +11,7 @@ namespace coder_tester
     {
         public class Packet_Sender : IDataPacketSender<int>
         {
-            public int[] randomData;
+            public int[] data;
             System.Collections.Generic.List<IDataPacketHandler<int>> handlers = new System.Collections.Generic.List<IDataPacketHandler<int>>();
 
             public Packet_Sender()
@@ -19,24 +19,29 @@ namespace coder_tester
             }
             public Packet_Sender(int[] data)
             {
-                randomData = data;
+                this.data = data;
             }
             public Packet_Sender(byte[] data)
             {
-                randomData = new int[data.Length / 2];
+                this.data = new int[data.Length];
 
-                for (int i = 0; i < data.Length; i += 2)
-                    randomData[i >> 1] = BitConverter.ToInt16(data, i);
+                for (int i = 0; i < data.Length; i += 1)
+                    this.data[i] = data[i];
             }
-            public void GenerateRandom(int amount)
+            public static int[] GenerateRandom(int amount)
             {
-                int Min = -20;
-                int Max = 20;
+                int Min = -1;
+                int Max = 1;
                 Random randNum = new Random();
-                randomData = Enumerable
+                var data = Enumerable
                     .Repeat<int>(0, amount)
                     .Select(i => randNum.Next(Min, Max))
                     .ToArray();
+                /*
+                var data = Enumerable
+                    .Repeat<int>(0, amount).ToArray();
+                data[data.Length - 1] = 1;*/
+                return data;
             }
             public void RegisterPacketHandler(IDataPacketHandler<int> handler)
             {
@@ -44,7 +49,7 @@ namespace coder_tester
             }
             public void SendDataPeriodically(int delay_millisecond)
             {
-                foreach(var data in randomData)
+                foreach(var data in data)
                 {
                     //System.Threading.Thread.Sleep(1);
                     foreach(var handler in handlers)
@@ -111,35 +116,10 @@ namespace coder_tester
                 return false;
             }
         }
-
-        BitArray randomBitGenerator()
-        {
-            int Min = 0;
-            int Max = 20;
-            Random randNum = new Random();
-            int[] test2 = Enumerable
-                .Repeat(0, 10000)
-                .Select(i => randNum.Next(Min, Max))
-                .ToArray();
-
-            BitArray test_array = new BitArray(test2);
-
-            return test_array;
-        }
-
-        [TestMethod]
-        public void TestMethod1()
-        {
-            BitArray test_array = randomBitGenerator();
-            Data test_data = new Data(test_array);
-            bool test_result = test_array.Length > test_data.entropy;
-            Assert.IsTrue(test_result, "Entropy: ({0}) is not smaller than {1}", test_data.entropy, test_array.Length);
-        }
-        
         [TestMethod]
         public void TestMethod2()
         {
-            BitArray test_array = randomBitGenerator();
+            BitArray test_array = new BitArray(Packet_Sender.GenerateRandom(1000));
             Data test_data = new Data(test_array);
             BinaryCoder coder = new BinaryCoder();
             var encoded = coder.encode(test_data);
@@ -184,24 +164,29 @@ namespace coder_tester
         [TestMethod]
         public void ByteCoderTest()
         {
-            Packet_Sender bitstream = new Packet_Sender();
-            bitstream.GenerateRandom(10000);
-            //bitstream.ReadBytes(@"bytes");
-            ByteEncoder encoder = new ByteEncoder();
+            byte[] original_data = null;
+            Packet_Sender.ReadBytes(@"bytes", ref original_data);
+            //bitstream.GenerateRandom(10000);
+            uint[] table = new uint[byte.MaxValue + 1];
+            foreach (byte i in original_data)
+                table[i]++;
+            ProbabilityAdaptor p_model = new ProbabilityAdaptor(byte.MaxValue, table);
+            ByteEncoder encoder = new ByteEncoder(p_model);
+            Packet_Sender bitstream = new Packet_Sender(original_data);
             encoder.Initialise(bitstream);
             bitstream.SendDataPeriodically(1);
             encoder.Finalise();
-            ByteDecoder decoder = new ByteDecoder(bitstream.randomData.Count());
-            Packet_Sender bitstream2 = new Packet_Sender(encoder.result.Select(x=>(int)x).ToArray());
+            ByteDecoder decoder = new ByteDecoder(bitstream.data.Count(), p_model);
+            Packet_Sender bitstream2 = new Packet_Sender(encoder.result.ToArray());
             decoder.Initialise(bitstream2);
             bitstream2.SendDataPeriodically(1);
             decoder.Finalise();
 
             bool violation = false;
-            Assert.IsTrue(decoder.result.Count == bitstream.randomData.Count(), "length not equal. decoded length: {0} as opposed to {1}", decoder.result.Count, bitstream.randomData.Count());
-            for (int i = 0; i < bitstream.randomData.Length; i++)
+            Assert.IsTrue(decoder.result.Count == bitstream.data.Count(), "length not equal. decoded length: {0} as opposed to {1}", decoder.result.Count, bitstream.data.Count());
+            for (int i = 0; i < bitstream.data.Length; i++)
             {
-                violation = bitstream.randomData[i] != decoder.result[i];
+                violation = bitstream.data[i] != decoder.result[i];
                 if (violation)
                 {
                     //bitstream.SaveBytes(@"bytes");
@@ -214,21 +199,21 @@ namespace coder_tester
         [TestMethod]
         public void BinaryCoderTest()
         {
-            byte[] original_data = null;
-            Packet_Sender.ReadBytes(@"bytes", ref original_data);
+            //Packet_Sender bitstream = new Packet_Sender(sent_array);
+            byte[] original_data = Packet_Sender.GenerateRandom(10000).Select(x=>(byte)x).ToArray();
             int[] table = new int[byte.MaxValue + 1];
             foreach (byte i in original_data)
                 table[i]++;
             BinarySymbolBinaryRangeCoder.MoreZeroAdaptor s_adap = new BinarySymbolBinaryRangeCoder.MoreZeroAdaptor(table);
-            var sent_array = original_data.Select(x => (byte) s_adap.get_symbol(x)).ToArray();
-            Packet_Sender bitstream = new Packet_Sender(sent_array);
-            //bitstream.GenerateRandom(10000);
+            var sent_array = original_data.Select(x => (byte)s_adap.get_symbol(x)).ToArray();
+            //Packet_Sender.ReadBytes(@"bytes", ref original_data);
             uint low_count = BinaryProbabilityModel.get_low_count(sent_array);
             uint total_count = (uint)(sent_array.Length) * 8;
-            sent_array = null;
+            //sent_array = null;
             BinaryProbabilityModel p_model = new BinaryProbabilityModel(low_count, total_count);
             //BinaryProbabilityModel p_model = new BinaryExpIncProbilityAdaptor(low_count, total_count);
             BinaryEncoder encoder = new BinaryEncoder(p_model);
+            Packet_Sender bitstream = new Packet_Sender(sent_array);
             encoder.Initialise(bitstream);
             bitstream.SendDataPeriodically(1);
             encoder.Finalise();
@@ -237,7 +222,7 @@ namespace coder_tester
             System.Diagnostics.Trace.WriteLine(string.Format("DataSize: {0}; Entropy: {1}; Encoded Size: {2}", total_count, entropy, encoder.result.Count * 8));
             System.Diagnostics.Trace.Flush();
             //p_model = new BinaryExpIncProbilityAdaptor(low_count, total_count);
-            BinaryDecoder decoder = new BinaryDecoder(p_model, bitstream.randomData.Length * 2);
+            BinaryDecoder decoder = new BinaryDecoder(p_model, bitstream.data.Length);
             Packet_Sender bitstream2 = new Packet_Sender(encoder.result.Select(x => (int)x).ToArray());
             decoder.Initialise(bitstream2);
             bitstream2.SendDataPeriodically(1);
@@ -262,24 +247,21 @@ namespace coder_tester
             byte[] original_data = null;
             Packet_Sender.ReadBytes(@"bytes", ref original_data);
             int total_count = 0;
-            int[] table = new int[ushort.MaxValue + 1];
-            foreach(int i in original_data)
+            ushort[] converted = new ushort[original_data.Length / 2];
+            for(int i =0;i < original_data.Length; i += 2)
             {
-                table[(ushort)i]++;
+                converted[i / 2] = BitConverter.ToUInt16(original_data, i);
+            }
+            int[] table = new int[ushort.MaxValue + 1];
+            foreach(int i in converted)
+            {
+                table[i]++;
                 total_count++;
             }
-            for (int i=0; i<= ushort.MaxValue;++i)
-                if (table[i] == 0)
-                {
-                    table[i]++;
-                    total_count++;
-                }
-
             double entropy = 0;
             for (int i = 0; i <= ushort.MaxValue; ++i)
-            {
-                entropy+=table[i] * Math.Log((double)total_count / (double)table[i], 2);
-            }
+                if (table[i] > 0)
+                    entropy+=table[i] * Math.Log((double)total_count / (double)table[i], 2);
 
             uint result = (uint)Math.Ceiling(entropy);
         }
@@ -297,18 +279,11 @@ namespace coder_tester
                 table[i]++;
                 total_count++;
             }
-            for (int i = 0; i <= byte.MaxValue; ++i)
-                if (table[i] == 0)
-                {
-                    table[i]++;
-                    total_count++;
-                }
 
             double entropy = 0;
             for (int i = 0; i <= byte.MaxValue; ++i)
-            {
-                entropy += table[i] * Math.Log((double)total_count / (double)table[i], 2);
-            }
+                if (table[i] > 0)
+                    entropy += table[i] * Math.Log((double)total_count / (double)table[i], 2);
 
             uint result = (uint)Math.Ceiling(entropy);
         }

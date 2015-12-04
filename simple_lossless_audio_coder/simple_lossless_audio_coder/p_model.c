@@ -25,7 +25,7 @@ uint32_t get_entropy(uint32_t* count, uint32_t max_symbol) {
 	return (uint32_t)ceil(entropy);
 }
 
-void get_count(uint32_t* count, uint32_t max_symbol, uint32_t* input, uint32_t size)
+void get_count(uint32_t* count, uint32_t max_symbol, char* input, uint32_t size)
 {
 	for (uint32_t i = 0; i < max_symbol; ++i)
 		count[i] = 0;

@@ -2,10 +2,11 @@
 //
 
 #include "stdafx.h"
-
+#include "codec.h"
+#include "a_coder.h"
 
 int main()
 {
-    return 0;
+
 }
 

@@ -36,6 +36,12 @@
     <ClInclude Include="s_adaptor.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="codec.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="predictor.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="p_model.c">
@@ -54,6 +60,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="stdafx.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="codec.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="predictor.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

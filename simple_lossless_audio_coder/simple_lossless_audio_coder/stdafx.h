@@ -17,5 +17,5 @@
 #include <stdlib.h> 
 #include <stdint.h>
 
-
+#define M_PI 3.14159265358979323846
 #define HAVE_STRUCT_TIMESPEC

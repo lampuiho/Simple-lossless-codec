@@ -31,7 +31,7 @@ typedef struct {
 } decoder;
 
 void coder_input(range_coder* rc, uint32_t input);
-void en_init(encoder* en, probability_model* p, more_zero_adaptor* s, pthread_cond_t* cond_in, void* output_consumer, void(*consume)(void*, uint32_t input));
+void en_init(encoder* en, probability_model* p, more_zero_adaptor* s, void* output_consumer, void(*consume)(void*, uint32_t input));
 void en_finalise(encoder* en);
-void de_init(decoder* de, probability_model* p, more_zero_adaptor* s, uint32_t file_size, pthread_cond_t* cond_in, void* output_consumer, void(*consume)(void*, uint32_t input));
+void de_init(decoder* de, probability_model* p, more_zero_adaptor* s, uint32_t file_size, void* output_consumer, void(*consume)(void*, uint32_t input));
 void de_finalise(decoder* de);

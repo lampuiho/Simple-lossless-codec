@@ -9,7 +9,13 @@ const uint32_t max = -1;
 const uint32_t half = 0x80000000;
 
 void emit_output(range_coder* rc) {
+	pthread_mutex_lock(&rc->buffer.out_mutex);
+	while(thread_out_buffer_full(&rc->buffer))
+		pthread_cond_wait(&rc->buffer.condp, &rc->buffer.out_mutex);
+
 	thread_out_buffer_write(&rc->buffer, rc->current_output);
+	pthread_cond_signal(&rc->buffer.condp);
+	pthread_mutex_unlock(&rc->buffer.out_mutex);
 	rc->current_output = 0;
 }
 uint32_t get_mid(range_coder* rc) {
@@ -98,7 +104,7 @@ void en_consume(encoder* en) {
 	if (!thread_in_buffer_empty(&en->rc.buffer))
 		encode(en, thread_in_buffer_read(&en->rc.buffer));
 
-	pthread_cond_signal(en->rc.buffer.cond_in);
+	pthread_cond_signal(&en->rc.buffer.condc);
 	pthread_mutex_unlock(&en->rc.buffer.in_mutex);
 }
 void* en_main(encoder* en) {
@@ -121,7 +127,7 @@ void de_consume(decoder* de) {
 		if (!thread_in_buffer_empty(&de->rc.buffer))
 			de_input(de);
 
-		pthread_cond_signal(de->rc.buffer.cond_in);
+		pthread_cond_signal(&de->rc.buffer.condc);
 		pthread_mutex_unlock(&de->rc.buffer.in_mutex);
 	}
 	de->code <<= 1;
@@ -167,31 +173,36 @@ void* de_main(decoder* de) {
 
 	pthread_mutex_lock(&de->rc.buffer.in_mutex);
 	de->rc.buffer.recieve_complete = true;
-	pthread_cond_signal(de->rc.buffer.cond_in);
+	pthread_cond_signal(&de->rc.buffer.condc);
 	pthread_mutex_unlock(&de->rc.buffer.in_mutex);
+
+
+	pthread_mutex_lock(&de->rc.buffer.out_mutex);
 	de->rc.buffer.send_complete = true;
+	pthread_cond_signal(&de->rc.buffer.condp);
+	pthread_mutex_unlock(&de->rc.buffer.out_mutex);
 
 	return NULL;
 }
 
-void rc_init(range_coder* rc, probability_model* p, more_zero_adaptor* s, pthread_cond_t* cond_in, void* output_consumer, void(*consume)(void*, uint32_t input)) {
+void rc_init(range_coder* rc, probability_model* p, more_zero_adaptor* s, void* output_consumer, void(*consume)(void*, uint32_t input)) {
 	rc->p_model = p;
 	rc->s_adap = s;
 	rc->low = 0;
 	rc->range = 0;
 	rc->processed_count = 0;
 	rc->current_output = 0;
-	thread_buffer_init(&rc->buffer, cond_in, output_consumer, consume);
+	thread_buffer_init(&rc->buffer, output_consumer, consume);
 }
-void en_init(encoder* en, probability_model* p, more_zero_adaptor* s, pthread_cond_t* cond_in, void* output_consumer, void(*consume)(void*, uint32_t input)) {
+void en_init(encoder* en, probability_model* p, more_zero_adaptor* s, void* output_consumer, void(*consume)(void*, uint32_t input)) {
 	en->carry = false;
 	en->underflow = 0;
-	rc_init(&en->rc, p, s, cond_in, output_consumer, consume);
+	rc_init(&en->rc, p, s, output_consumer, consume);
 	pthread_create(&en->rc.buffer.consumer, NULL, en_main, en);
 }
-void de_init(decoder* de, probability_model* p, more_zero_adaptor* s, uint32_t file_size, pthread_cond_t* cond_in, void* output_consumer, void(*consume)(void*, uint32_t input)) {
+void de_init(decoder* de, probability_model* p, more_zero_adaptor* s, uint32_t file_size, void* output_consumer, void(*consume)(void*, uint32_t input)) {
 	de->code = 0; de->current_input = 0; de->file_size = file_size; de->input_count = 0;
-	rc_init(&de->rc, p, s, cond_in, output_consumer, consume);
+	rc_init(&de->rc, p, s, output_consumer, consume);
 	pthread_create(&de->rc.buffer.consumer, NULL, de_main, de);
 }
 
@@ -206,15 +217,28 @@ void en_finalise(encoder* en) {
 	if (!thread_in_buffer_empty(&en->rc.buffer))
 		encode(en, thread_in_buffer_read(&en->rc.buffer));
 
-	en->underflow++;
-	if (!en->carry && (en->rc.low < half))
-		en_clear_underflow(en);
-	else
+	bool quarter = ((en->rc.low >> (MSB_pos - 1)) & 1) == 1;
+	if (en->carry || en->rc.low >= half && quarter)
 		en_clear_carry_underflow(en);
+	else
+		en_clear_underflow(en);
+	if (quarter)
+	{
+		if (en->rc.low >= half) emit_zero(&en->rc);	else emit_one(&en->rc);	emit_zero(&en->rc);
+	}
+	else
+	{
+		if (en->rc.low >= half) emit_one(&en->rc); else emit_zero(&en->rc); emit_one(&en->rc);
+	}
 
 	en->rc.current_output >>= (byte_size - en->rc.processed_count - 1);
 	emit_output(&en->rc);
 	en->rc.buffer.send_complete = true;
+	pthread_mutex_lock(&en->rc.buffer.out_mutex);
+	en->rc.buffer.send_complete = true;
+	pthread_cond_signal(&en->rc.buffer.condp);
+	pthread_mutex_unlock(&en->rc.buffer.out_mutex);
+	pthread_join(en->rc.buffer.producer, NULL);
 }
 void de_finalise(decoder* de) {
 	pthread_mutex_lock(&de->rc.buffer.in_mutex);
@@ -222,12 +246,13 @@ void de_finalise(decoder* de) {
 	pthread_cond_signal(&de->rc.buffer.condc);
 	pthread_mutex_unlock(&de->rc.buffer.in_mutex);
 	pthread_join(de->rc.buffer.consumer, NULL);
+	pthread_join(de->rc.buffer.producer, NULL);
 }
 
 void coder_input(range_coder* rc, uint32_t input) {
 	pthread_mutex_lock(&rc->buffer.in_mutex);
 	while (thread_in_buffer_full(&rc->buffer) && !rc->buffer.recieve_complete)
-		pthread_cond_wait(rc->buffer.cond_in, &rc->buffer.in_mutex);
+		pthread_cond_wait(&rc->buffer.condc, &rc->buffer.in_mutex);
 	thread_in_buffer_write(&rc->buffer, input);
 	pthread_cond_signal(&rc->buffer.condc);
 	pthread_mutex_unlock(&rc->buffer.in_mutex);

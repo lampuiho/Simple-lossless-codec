@@ -36,7 +36,7 @@ namespace Simple_lossless_codec
         protected abstract void Init();
         public virtual uint CDF(dynamic symbol)
         {
-            int temp = System.Convert.ToInt32(symbol);
+            uint temp = (uint)(symbol);
             if (temp == 0)
                 return 0;
             else
@@ -56,6 +56,19 @@ namespace Simple_lossless_codec
 
         public ProbabilityAdaptor(int MaxSymbolValue) : base(MaxSymbolValue)
         {
+        }
+        public ProbabilityAdaptor(int MaxSymbolValue, uint[] count) : base(MaxSymbolValue)
+        {
+            symbol_count = count;
+            for (int i = 1; i < symbol_count.Length; ++i)
+            {
+                symbol_count[i] += symbol_count[i - 1];
+            }
+            for (int i = 0; i < MaxSymbolValue; ++i)
+            {
+                symbol_count[i] = (uint)((ulong)max_value * symbol_count[i] / this.CDF_T);
+            }
+            symbol_count[MaxSymbolValue] = max_value;
         }
 
         protected override void Init()

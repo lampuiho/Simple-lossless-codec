@@ -8,7 +8,6 @@ typedef struct {
 	pthread_t consumer, producer;
 	pthread_mutex_t in_mutex, out_mutex;
 	pthread_cond_t condc, condp;
-	pthread_cond_t* cond_in;
 	void(*consume)(void*, uint32_t input);
 	void* output_consumer;
 	uint32_t in_write_pos;
@@ -22,7 +21,7 @@ typedef struct {
 	uint32_t in_buffer[1024], out_buffer[1024];
 } consumer_producer_buffer;
 
-void thread_buffer_init(consumer_producer_buffer* b, pthread_cond_t* cond_in, void* output_consumer, void(*consume)(void*, uint32_t input));
+void thread_buffer_init(consumer_producer_buffer* b, void* output_consumer, void(*consume)(void*, uint32_t input));
 bool thread_in_buffer_full(consumer_producer_buffer* b);
 bool thread_out_buffer_full(consumer_producer_buffer* b);
 bool thread_in_buffer_empty(consumer_producer_buffer* b);

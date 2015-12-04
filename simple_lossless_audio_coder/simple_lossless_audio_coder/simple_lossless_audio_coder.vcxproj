@@ -144,6 +144,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="a_coder.h" />
+    <ClInclude Include="codec.h" />
+    <ClInclude Include="predictor.h" />
     <ClInclude Include="p_model.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="s_adaptor.h" />
@@ -152,6 +154,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="a_coder.c" />
+    <ClCompile Include="codec.c" />
+    <ClCompile Include="predictor.c" />
     <ClCompile Include="p_model.c" />
     <ClCompile Include="simple_lossless_audio_coder.c" />
     <ClCompile Include="stdafx.c">
